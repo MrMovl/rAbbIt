@@ -73,13 +73,8 @@ emptyField =
     }
 
 initialAi = 
-    { position = rootPosition
+    { position = { x = 1, y = 1 }
     , hasCargo = False
-    }
-
-rootPosition =
-    { x = 1
-    , y = 1
     }
 
 update : Action -> Model -> Model
@@ -160,3 +155,4 @@ aiCellStyle =
     Attr.style
         [ ( "background-color", "red" )
         ]
+
