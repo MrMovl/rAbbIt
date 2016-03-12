@@ -3,13 +3,15 @@ module Rabbit where
 import Html
 import Html.Attributes as Attr
 import Html.Events as Events
+import Time
 
 -------------- Model --------------
 
 type alias Model =
     { ai : AI
     , sheeps : List Sheep
-    , field : Field
+    , walls : List Wall
+    , fences : List Fence
     , score : Score
     }
 
@@ -29,18 +31,33 @@ type alias Cargo = Bool
 
 type alias Score = Int
 
-type alias Cell =
-    { coordinate: Coordinate
-    , fieldType: FieldType
-    }
-
 type FieldType = Empty | Blocked | ContainsSheep
 
 type alias Coordinate = { x: Int, y: Int }
 
-type alias Field =
-    { cells: List Cell
+type alias Wall =
+    { coordinate : Coordinate
+    , orientation : Orientation
     }
+
+type alias Fence =
+    { coordinate : Coordinate
+    , orientation : Orientation
+    , age : Time.Time
+    }
+
+type Orientation =
+    TopBottom
+    | LeftRight
+    | LeftTop
+    | LeftBottom
+    | TopRight
+    | BottomRight
+    | Cross
+    | LeftTopRight
+    | TopRightBottom
+    | RightBottomLeft
+    | BottomLeftTop
 
 type Action =
     NoOp
@@ -61,21 +78,6 @@ model : Signal Model
 model =
   Signal.foldp update initialModel actions.signal
 
-initialModel =
-    { ai = initialAi
-    , sheeps = []
-    , field = emptyField
-    , score = 0
-    }
-
-emptyField =
-    { cells = [ cell1, cell2, cell3, cell4, cell5, cell6, cell7, cell8, cell9 ]
-    }
-
-initialAi = 
-    { position = { x = 1, y = 1 }
-    , hasCargo = False
-    }
 
 update : Action -> Model -> Model
 update action model =
@@ -87,50 +89,68 @@ view : Signal.Address Action -> Model -> Html.Html
 view address model =
     Html.div [] []
 
-cell1 =
-    { coordinate = { x = 0, y = 0 }
-    , fieldType = Blocked
+-------------------- Initial Values ---------------
+
+initialModel =
+    { ai = initialAi
+    , sheeps = initialSheep
+    , walls = outerWalls
+    , fences = []
+    , score = 0
     }
 
-cell2 =
-    { coordinate = { x = 1, y = 0 }
-    , fieldType = Blocked
+outerWalls =
+    [ { coordinate = { x = 0, y = 0 }, orientation = BottomRight }
+    , { coordinate = { x = 1, y = 0 }, orientation = LeftRight }
+    , { coordinate = { x = 2, y = 0 }, orientation = LeftRight }
+    , { coordinate = { x = 3, y = 0 }, orientation = LeftRight }
+    , { coordinate = { x = 4, y = 0 }, orientation = LeftRight }
+    , { coordinate = { x = 5, y = 0 }, orientation = LeftRight }
+    , { coordinate = { x = 6, y = 0 }, orientation = LeftRight }
+    , { coordinate = { x = 7, y = 0 }, orientation = LeftRight }
+    , { coordinate = { x = 8, y = 0 }, orientation = LeftRight }
+    , { coordinate = { x = 9, y = 0 }, orientation = LeftBottom }
+    , { coordinate = { x = 9, y = 1 }, orientation = TopBottom }
+    , { coordinate = { x = 9, y = 2 }, orientation = TopBottom }
+    , { coordinate = { x = 9, y = 3 }, orientation = TopBottom }
+    , { coordinate = { x = 9, y = 4 }, orientation = TopBottom }
+    , { coordinate = { x = 9, y = 5 }, orientation = TopBottom }
+    , { coordinate = { x = 9, y = 6 }, orientation = TopBottom }
+    , { coordinate = { x = 9, y = 7 }, orientation = TopBottom }
+    , { coordinate = { x = 9, y = 8 }, orientation = TopBottom }
+    , { coordinate = { x = 9, y = 9 }, orientation = LeftTop }
+    , { coordinate = { x = 8, y = 9 }, orientation = LeftRight }
+    , { coordinate = { x = 7, y = 9 }, orientation = LeftRight }
+    , { coordinate = { x = 6, y = 9 }, orientation = LeftRight }
+    , { coordinate = { x = 5, y = 9 }, orientation = LeftRight }
+    , { coordinate = { x = 4, y = 9 }, orientation = LeftRight }
+    , { coordinate = { x = 3, y = 9 }, orientation = LeftRight }
+    , { coordinate = { x = 2, y = 9 }, orientation = LeftRight }
+    , { coordinate = { x = 1, y = 9 }, orientation = LeftRight }
+    , { coordinate = { x = 0, y = 9 }, orientation = TopRight }
+    , { coordinate = { x = 0, y = 8 }, orientation = TopBottom }
+    , { coordinate = { x = 0, y = 7 }, orientation = TopBottom }
+    , { coordinate = { x = 0, y = 6 }, orientation = TopBottom }
+    , { coordinate = { x = 0, y = 5 }, orientation = TopBottom }
+    , { coordinate = { x = 0, y = 4 }, orientation = TopBottom }
+    , { coordinate = { x = 0, y = 3 }, orientation = TopBottom }
+    , { coordinate = { x = 0, y = 2 }, orientation = TopBottom }
+    , { coordinate = { x = 0, y = 1 }, orientation = TopBottom }
+    ]
+
+initialAi = 
+    { position = { x = 1, y = 1 }
+    , hasCargo = False
     }
 
-cell3 =
-    { coordinate = { x = 2, y = 0 }
-    , fieldType = Blocked
-    }
+initialSheep =
+    [ { position = { x = 4, y = 4 }, moveDirection = Right }
+    , { position = { x = 4, y = 5 }, moveDirection = Up }
+    , { position = { x = 5, y = 5 }, moveDirection = Left }
+    , { position = { x = 5, y = 4 }, moveDirection = Down }
+    ]
 
-cell4 =
-    { coordinate = { x = 0, y = 1 }
-    , fieldType = Blocked
-    }
-
-cell5 =
-    { coordinate = { x = 1, y = 1 }
-    , fieldType = Empty
-    }
-
-cell6 =
-    { coordinate = { x = 2, y = 1 }
-    , fieldType = Blocked
-    }
-
-cell7 =
-    { coordinate = { x = 0, y = 2 }
-    , fieldType = Blocked
-    }
-
-cell8 =
-    { coordinate = { x = 1, y = 2 }
-    , fieldType = Blocked
-    }
-
-cell9 =
-    { coordinate = { x = 2, y = 2 }
-    , fieldType = Blocked
-    }
+-------------------- CSS --------------------------
 
 
 cellStyle =
