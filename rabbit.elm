@@ -4,6 +4,7 @@ import Html
 import Html.Attributes as Attr
 import Html.Events as Events
 import Time
+import Random
 
 -------------- Model --------------
 
@@ -14,6 +15,7 @@ type alias Model =
     , walls : List Wall
     , fences : List Fence
     , score : Score
+    , seed : Random.Seed
     }
 
 type alias AI =
@@ -34,7 +36,7 @@ type alias Score = Int
 
 type FieldType = Empty | Blocked | ContainsSheep
 
-type alias Coordinate = { x: Int, y: Int }
+type alias Coordinate = ( Int, Int )
 
 type alias Wall =
     { position : Coordinate
@@ -77,8 +79,10 @@ actions =
 
 model : Signal Model
 model =
-  Signal.foldp update initialModel actions.signal
+  Signal.foldp update initialModel ( Signal.sampleOn ticker actions.signal )
 
+--ticker : Signal Time.Time
+ticker = Time.every ( Time.second / 4 )
 
 update : Action -> Model -> Model
 update action model =
@@ -89,8 +93,7 @@ update action model =
 move : Model -> Model
 move model =
     let
-        ( newAi, newScore ) = if model.ai.hasCargo then goHome model else findSheep model
-        newSheep = List.map moveSheep model.sheep
+        ( newAi, newScore, newSheep ) = if model.ai.hasCargo then goHome model else findSheep model
     in
         { ai = newAi
         , home = model.home
@@ -98,45 +101,59 @@ move model =
         , walls = model.walls
         , fences = model.fences
         , score = newScore
+        , seed = model.seed
         }
 
-goHome : Model -> ( AI, Score )
+goHome : Model -> ( AI, Score, List Sheep )
 goHome model =
-    if model.ai.position.x == model.home.x && model.ai.position.y == model.home.y
+    if model.ai.position == model.home
     then dropCargo model
     else moveCloserToHome model
 
-dropCargo : Model -> ( AI, Score )
+dropCargo : Model -> ( AI, Score, List Sheep )
 dropCargo model =
-    ( { position = model.ai.position, hasCargo = False }, model.score + 1 )
+    let
+        newSheep = List.map moveSheep model.sheep
+    in
+        ( { position = model.ai.position, hasCargo = False }, model.score + 1, newSheep )
 
-moveCloserToHome : Model -> ( AI, Score )
+moveCloserToHome : Model -> ( AI, Score, List Sheep )
 moveCloserToHome model =
     let
-        newPosition =   if model.position.x > model.position.y 
-                        then { x = model.position.x - 1, y = model.position.y } 
-                        else { x = model.position.x, y = model.position.y - 1 }
+        ( x, y ) = model.ai.position
+        newPosition =   if x > y 
+                        then ( x - 1, y )
+                        else ( x, y - 1 )
+        newSheep = List.map moveSheep model.sheep
     in
-        ( { position = newPosition, hasCargo = model.ai.hasCargo }, model.score )
+        ( { position = newPosition, hasCargo = model.ai.hasCargo }, model.score, newSheep )
 
-findSheep : Model -> (AI, Score)
+findSheep : Model -> (AI, Score, List Sheep)
 findSheep model =
     let
         --closestSheep = pickClosestSheep model.ai model.sheep
-        --closestSheepPosition = closestSheep.position
-        closestSheep = List.head model.sheep |> Maybe.withDefault { position = { x = 1, y = 1 }, moveDirection = Up }
+        closestSheep = List.head model.sheep |> Maybe.withDefault { position = ( 1, 1 ), moveDirection = Up }
+        
         closestSheepPosition = closestSheep.position
-        newPosition = moveToward model.ai closestSheepPosition  
+        
+        
+        newPosition = moveToward model.ai.position closestSheepPosition
+        ( newSheep, cargo ) = if model.ai.position == closestSheepPosition then pickUpSheep model.sheep closestSheep else ( List.map moveSheep model.sheep, False )
     in
-        ( { position = newPosition, hasCargo = model.ai.hasCargo }, model.score )
+        ( { position = newPosition, hasCargo = cargo }, model.score, newSheep )
 
-moveToward : AI -> Coordinate -> Coordinate
-moveToward ai position =
+pickUpSheep allSheep closest =
+    ( List.filter ( (/=) closest ) allSheep, True )
+
+moveToward : Coordinate -> Coordinate -> Coordinate
+moveToward aiPosition position =
     let
-        newX = if ai.x == position.x then ai.x else moveSingleToward ai.x position.x
-        newY = if ai.y == position.y then ai.y else moveSingleToward ai.y position.y
+        ( aiX, aiY ) = aiPosition
+        ( x, y ) = position
+        newX = if aiX == x then aiX else moveSingleToward aiX x
+        newY = if aiY == y then aiY else moveSingleToward aiY y
     in
-        { x = newX, y = newY }
+        ( newX, newY )
 
 moveSingleToward : Int -> Int -> Int
 moveSingleToward a b =
@@ -176,13 +193,12 @@ drawElements elements color =
 drawElement element color =
     [ drawCell color element ]
 
-drawCell : String -> { b | position : { a | x : number, y : number' } } -> Html.Html
 drawCell color element =
     let
-        position = element.position
-        leftMargin = cellSize * position.x |> toString
+        ( x, y ) = element.position
+        leftMargin = cellSize * x |> toString
         leftMarginString = leftMargin ++ "px"
-        topMargin = cellSize * position.y |> toString
+        topMargin = cellSize * y |> toString
         topMarginString = topMargin ++ "px"
         size = toString cellSize ++ "px"
         style = Attr.style 
@@ -196,107 +212,111 @@ drawCell color element =
     in
         Html.div [ style ] []
 
+euclidianDistance : Coordinate -> Coordinate -> Float
+euclidianDistance (p1, p2) (q1, q2) =
+  (q1 - p1)^2 + (q2 - p2)^2 |> toFloat |> sqrt
 
 -------------------- Initial Values ---------------
 
 initialModel =
     { ai = initialAi
-    , home = { x = 1, y = 1 }
+    , home = ( 1, 1 )
     , sheep = initialSheep
     , walls = outerWalls
     , fences = []
     , score = 0
+    , seed = Random.initialSeed 42
     }
 
 outerWalls =
-    [ { position = { x = 0, y = 0 }, orientation = BottomRight }
-    , { position = { x = 1, y = 0 }, orientation = LeftRight }
-    , { position = { x = 2, y = 0 }, orientation = LeftRight }
-    , { position = { x = 3, y = 0 }, orientation = LeftRight }
-    , { position = { x = 4, y = 0 }, orientation = LeftRight }
-    , { position = { x = 5, y = 0 }, orientation = LeftRight }
-    , { position = { x = 6, y = 0 }, orientation = LeftRight }
-    , { position = { x = 7, y = 0 }, orientation = LeftRight }
-    , { position = { x = 8, y = 0 }, orientation = LeftRight }
-    , { position = { x = 9, y = 0 }, orientation = LeftRight }
-    , { position = { x = 10, y = 0 }, orientation = LeftRight }
-    , { position = { x = 11, y = 0 }, orientation = LeftRight }
-    , { position = { x = 12, y = 0 }, orientation = LeftRight }
-    , { position = { x = 13, y = 0 }, orientation = LeftRight }
-    , { position = { x = 14, y = 0 }, orientation = LeftRight }
-    , { position = { x = 15, y = 0 }, orientation = LeftRight }
-    , { position = { x = 16, y = 0 }, orientation = LeftRight }
-    , { position = { x = 17, y = 0 }, orientation = LeftRight }
-    , { position = { x = 18, y = 0 }, orientation = LeftRight }
-    , { position = { x = 19, y = 0 }, orientation = LeftBottom }
-    , { position = { x = 19, y = 1 }, orientation = TopBottom }
-    , { position = { x = 19, y = 2 }, orientation = TopBottom }
-    , { position = { x = 19, y = 3 }, orientation = TopBottom }
-    , { position = { x = 19, y = 4 }, orientation = TopBottom }
-    , { position = { x = 19, y = 5 }, orientation = TopBottom }
-    , { position = { x = 19, y = 6 }, orientation = TopBottom }
-    , { position = { x = 19, y = 7 }, orientation = TopBottom }
-    , { position = { x = 19, y = 8 }, orientation = TopBottom }
-    , { position = { x = 19, y = 9 }, orientation = TopBottom }
-    , { position = { x = 19, y = 10 }, orientation = TopBottom }
-    , { position = { x = 19, y = 11 }, orientation = TopBottom }
-    , { position = { x = 19, y = 12 }, orientation = TopBottom }
-    , { position = { x = 19, y = 13 }, orientation = TopBottom }
-    , { position = { x = 19, y = 14 }, orientation = TopBottom }
-    , { position = { x = 19, y = 15 }, orientation = TopBottom }
-    , { position = { x = 19, y = 16 }, orientation = TopBottom }
-    , { position = { x = 19, y = 17 }, orientation = TopBottom }
-    , { position = { x = 19, y = 18 }, orientation = TopBottom }
-    , { position = { x = 19, y = 19 }, orientation = LeftTop }
-    , { position = { x = 18, y = 19 }, orientation = LeftRight }
-    , { position = { x = 17, y = 19 }, orientation = LeftRight }
-    , { position = { x = 16, y = 19 }, orientation = LeftRight }
-    , { position = { x = 15, y = 19 }, orientation = LeftRight }
-    , { position = { x = 14, y = 19 }, orientation = LeftRight }
-    , { position = { x = 13, y = 19 }, orientation = LeftRight }
-    , { position = { x = 12, y = 19 }, orientation = LeftRight }
-    , { position = { x = 11, y = 19 }, orientation = LeftRight }
-    , { position = { x = 10, y = 19 }, orientation = LeftRight }
-    , { position = { x = 9, y = 19 }, orientation = LeftRight }
-    , { position = { x = 8, y = 19 }, orientation = LeftRight }
-    , { position = { x = 7, y = 19 }, orientation = LeftRight }
-    , { position = { x = 6, y = 19 }, orientation = LeftRight }
-    , { position = { x = 5, y = 19 }, orientation = LeftRight }
-    , { position = { x = 4, y = 19 }, orientation = LeftRight }
-    , { position = { x = 3, y = 19 }, orientation = LeftRight }
-    , { position = { x = 2, y = 19 }, orientation = LeftRight }
-    , { position = { x = 1, y = 19 }, orientation = LeftRight }
-    , { position = { x = 0, y = 19 }, orientation = TopRight }
-    , { position = { x = 0, y = 18 }, orientation = TopBottom }
-    , { position = { x = 0, y = 17 }, orientation = TopBottom }
-    , { position = { x = 0, y = 16 }, orientation = TopBottom }
-    , { position = { x = 0, y = 15 }, orientation = TopBottom }
-    , { position = { x = 0, y = 14 }, orientation = TopBottom }
-    , { position = { x = 0, y = 13 }, orientation = TopBottom }
-    , { position = { x = 0, y = 12 }, orientation = TopBottom }
-    , { position = { x = 0, y = 11 }, orientation = TopBottom }
-    , { position = { x = 0, y = 10 }, orientation = TopBottom }
-    , { position = { x = 0, y = 9 }, orientation = TopBottom }
-    , { position = { x = 0, y = 8 }, orientation = TopBottom }
-    , { position = { x = 0, y = 7 }, orientation = TopBottom }
-    , { position = { x = 0, y = 6 }, orientation = TopBottom }
-    , { position = { x = 0, y = 5 }, orientation = TopBottom }
-    , { position = { x = 0, y = 4 }, orientation = TopBottom }
-    , { position = { x = 0, y = 3 }, orientation = TopBottom }
-    , { position = { x = 0, y = 2 }, orientation = TopBottom }
-    , { position = { x = 0, y = 1 }, orientation = TopBottom }
+    [ { position = ( 0, 0 ), orientation = BottomRight }
+    , { position = ( 1, 0 ), orientation = LeftRight }
+    , { position = ( 2, 0 ), orientation = LeftRight }
+    , { position = ( 3, 0 ), orientation = LeftRight }
+    , { position = ( 4, 0 ), orientation = LeftRight }
+    , { position = ( 5, 0 ), orientation = LeftRight }
+    , { position = ( 6, 0 ), orientation = LeftRight }
+    , { position = ( 7, 0 ), orientation = LeftRight }
+    , { position = ( 8, 0 ), orientation = LeftRight }
+    , { position = ( 9, 0 ), orientation = LeftRight }
+    , { position = ( 10, 0 ), orientation = LeftRight }
+    , { position = ( 11, 0 ), orientation = LeftRight }
+    , { position = ( 12, 0 ), orientation = LeftRight }
+    , { position = ( 13, 0 ), orientation = LeftRight }
+    , { position = ( 14, 0 ), orientation = LeftRight }
+    , { position = ( 15, 0 ), orientation = LeftRight }
+    , { position = ( 16, 0 ), orientation = LeftRight }
+    , { position = ( 17, 0 ), orientation = LeftRight }
+    , { position = ( 18, 0 ), orientation = LeftRight }
+    , { position = ( 19, 0 ), orientation = LeftBottom }
+    , { position = ( 19, 1 ), orientation = TopBottom }
+    , { position = ( 19, 2 ), orientation = TopBottom }
+    , { position = ( 19, 3 ), orientation = TopBottom }
+    , { position = ( 19, 4 ), orientation = TopBottom }
+    , { position = ( 19, 5 ), orientation = TopBottom }
+    , { position = ( 19, 6 ), orientation = TopBottom }
+    , { position = ( 19, 7 ), orientation = TopBottom }
+    , { position = ( 19, 8 ), orientation = TopBottom }
+    , { position = ( 19, 9 ), orientation = TopBottom }
+    , { position = ( 19, 10 ), orientation = TopBottom }
+    , { position = ( 19, 11 ), orientation = TopBottom }
+    , { position = ( 19, 12 ), orientation = TopBottom }
+    , { position = ( 19, 13 ), orientation = TopBottom }
+    , { position = ( 19, 14 ), orientation = TopBottom }
+    , { position = ( 19, 15 ), orientation = TopBottom }
+    , { position = ( 19, 16 ), orientation = TopBottom }
+    , { position = ( 19, 17 ), orientation = TopBottom }
+    , { position = ( 19, 18 ), orientation = TopBottom }
+    , { position = ( 19, 19 ), orientation = LeftTop }
+    , { position = ( 18, 19 ), orientation = LeftRight }
+    , { position = ( 17, 19 ), orientation = LeftRight }
+    , { position = ( 16, 19 ), orientation = LeftRight }
+    , { position = ( 15, 19 ), orientation = LeftRight }
+    , { position = ( 14, 19 ), orientation = LeftRight }
+    , { position = ( 13, 19 ), orientation = LeftRight }
+    , { position = ( 12, 19 ), orientation = LeftRight }
+    , { position = ( 11, 19 ), orientation = LeftRight }
+    , { position = ( 10, 19 ), orientation = LeftRight }
+    , { position = ( 9, 19 ), orientation = LeftRight }
+    , { position = ( 8, 19 ), orientation = LeftRight }
+    , { position = ( 7, 19 ), orientation = LeftRight }
+    , { position = ( 6, 19 ), orientation = LeftRight }
+    , { position = ( 5, 19 ), orientation = LeftRight }
+    , { position = ( 4, 19 ), orientation = LeftRight }
+    , { position = ( 3, 19 ), orientation = LeftRight }
+    , { position = ( 2, 19 ), orientation = LeftRight }
+    , { position = ( 1, 19 ), orientation = LeftRight }
+    , { position = ( 0, 19 ), orientation = TopRight }
+    , { position = ( 0, 18 ), orientation = TopBottom }
+    , { position = ( 0, 17 ), orientation = TopBottom }
+    , { position = ( 0, 16 ), orientation = TopBottom }
+    , { position = ( 0, 15 ), orientation = TopBottom }
+    , { position = ( 0, 14 ), orientation = TopBottom }
+    , { position = ( 0, 13 ), orientation = TopBottom }
+    , { position = ( 0, 12 ), orientation = TopBottom }
+    , { position = ( 0, 11 ), orientation = TopBottom }
+    , { position = ( 0, 10 ), orientation = TopBottom }
+    , { position = ( 0, 9 ), orientation = TopBottom }
+    , { position = ( 0, 8 ), orientation = TopBottom }
+    , { position = ( 0, 7 ), orientation = TopBottom }
+    , { position = ( 0, 6 ), orientation = TopBottom }
+    , { position = ( 0, 5 ), orientation = TopBottom }
+    , { position = ( 0, 4 ), orientation = TopBottom }
+    , { position = ( 0, 3 ), orientation = TopBottom }
+    , { position = ( 0, 2 ), orientation = TopBottom }
+    , { position = ( 0, 1 ), orientation = TopBottom }
     ]
 
 initialAi = 
-    { position = { x = 1, y = 1 }
+    { position = ( 1, 1 )
     , hasCargo = False
     }
 
 initialSheep =
-    [ { position = { x = 9, y = 9 }, moveDirection = Right }
-    , { position = { x = 9, y = 12 }, moveDirection = Up }
-    , { position = { x = 12, y = 12 }, moveDirection = Left }
-    , { position = { x = 12, y = 9 }, moveDirection = Down }
+    [ { position = ( 9, 9 ), moveDirection = Right }
+    , { position = ( 9, 12 ), moveDirection = Up }
+    , { position = ( 12, 12 ), moveDirection = Left }
+    , { position = ( 12, 9 ), moveDirection = Down }
     ]
 
 -------------------- CSS --------------------------
