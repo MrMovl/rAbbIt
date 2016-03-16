@@ -93,7 +93,10 @@ update action model =
 move : Model -> Model
 move model =
     let
-        ( newAi, newScore, newSheep ) = if model.ai.hasCargo then goHome model else findSheep model
+        ( newAi, newScore, newSheep ) = 
+            if model.ai.hasCargo 
+            then goHome model 
+            else findSheep model
     in
         { ai = newAi
         , home = model.home
@@ -131,16 +134,37 @@ moveCloserToHome model =
 findSheep : Model -> (AI, Score, List Sheep)
 findSheep model =
     let
-        --closestSheep = pickClosestSheep model.ai model.sheep
-        closestSheep = List.head model.sheep |> Maybe.withDefault { position = ( 1, 1 ), moveDirection = Up }
-        
+        closestSheep = pickClosestSheep model.ai model.sheep
         closestSheepPosition = closestSheep.position
-        
-        
         newPosition = moveToward model.ai.position closestSheepPosition
-        ( newSheep, cargo ) = if model.ai.position == closestSheepPosition then pickUpSheep model.sheep closestSheep else ( List.map moveSheep model.sheep, False )
+        ( newSheep, cargo ) = 
+            if model.ai.position == closestSheepPosition 
+            then pickUpSheep model.sheep closestSheep 
+            else ( List.map moveSheep model.sheep, False )
     in
-        ( { position = newPosition, hasCargo = cargo }, model.score, newSheep )
+        if List.length model.sheep > 0
+        then ( { position = newPosition, hasCargo = cargo }, model.score, newSheep )
+        else ( model.ai, model.score, model.sheep )
+
+pickClosestSheep : AI -> List Sheep -> Sheep
+pickClosestSheep ai sheep =
+    let
+        comparer = compareAndSave ai.position
+    in
+        List.foldr comparer [] sheep |> List.head |> Maybe.withDefault { position = ( 999, 999 ), moveDirection = Left }
+
+compareAndSave target sheep acc =
+    let
+        closest = List.head acc |> Maybe.withDefault { position = ( 999, 999 ), moveDirection = Left }
+        distanceToCurrent = euclidianDistance target sheep.position
+        distanceToSaved = euclidianDistance target closest.position
+    in
+        if distanceToCurrent < distanceToSaved
+        then [ sheep ]
+        else acc
+
+distanceToSheep x sheep =
+    euclidianDistance x sheep.position
 
 pickUpSheep allSheep closest =
     ( List.filter ( (/=) closest ) allSheep, True )
@@ -150,23 +174,20 @@ moveToward aiPosition position =
     let
         ( aiX, aiY ) = aiPosition
         ( x, y ) = position
+        xDistance = aiX - x |> abs 
+        yDistance = aiY - y |> abs
         newX = if aiX == x then aiX else moveSingleToward aiX x
         newY = if aiY == y then aiY else moveSingleToward aiY y
     in
-        ( newX, newY )
+        if xDistance > yDistance
+        then ( ( moveSingleToward aiX x ), aiY )
+        else ( aiX, ( moveSingleToward aiY y ) )
 
 moveSingleToward : Int -> Int -> Int
 moveSingleToward a b =
     if a > b then a - 1 else a + 1
 
---pickClosestSheep : AI -> List Sheep -> Coordinate
---pickClosestSheep ai sheep =
---    let
---        pickCloseTo = pickClosest ai
---    in
---        List.foldr pickCloseTo [] sheep
-
-moveSheep : Sheep -> Sheep
+--moveSheep : Model -> Sheep
 moveSheep sheep = sheep
 
 view : Signal.Address Action -> Model -> Html.Html
