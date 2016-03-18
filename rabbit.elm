@@ -28,7 +28,7 @@ type alias Sheep =
     , moveDirection: Direction
     }
 
-type Direction = Left | Right | Up | Down
+type Direction = RightUp | Right | RightDown | Down | LeftDown | Left | LeftUp | Up
 
 type alias Cargo = Bool
 
@@ -104,8 +104,14 @@ move model =
         , walls = model.walls
         , fences = model.fences
         , score = newScore
-        , seed = model.seed
+        , seed = createNewSeed model.seed
         }
+
+createNewSeed seed =
+    let
+        ( _, newSeed ) = Random.generate ( Random.int 0 10000 ) seed
+    in
+        newSeed
 
 goHome : Model -> ( AI, Score, List Sheep )
 goHome model =
@@ -116,18 +122,26 @@ goHome model =
 dropCargo : Model -> ( AI, Score, List Sheep )
 dropCargo model =
     let
-        newSheep = List.map moveSheep model.sheep
+        newSheep = randomSheepMover model.sheep model.seed
     in
         ( { position = model.ai.position, hasCargo = False }, model.score + 1, newSheep )
+
+randomSheepMover sheep seed =
+    let
+        mover = moveSheep seed
+    in
+        List.map mover sheep
+
 
 moveCloserToHome : Model -> ( AI, Score, List Sheep )
 moveCloserToHome model =
     let
-        ( x, y ) = model.ai.position
+        ai = model.ai
+        ( x, y ) = ai.position
         newPosition =   if x > y 
                         then ( x - 1, y )
                         else ( x, y - 1 )
-        newSheep = List.map moveSheep model.sheep
+        newSheep = randomSheepMover model.sheep model.seed
     in
         ( { position = newPosition, hasCargo = model.ai.hasCargo }, model.score, newSheep )
 
@@ -140,7 +154,7 @@ findSheep model =
         ( newSheep, cargo ) = 
             if model.ai.position == closestSheepPosition 
             then pickUpSheep model.sheep closestSheep 
-            else ( List.map moveSheep model.sheep, False )
+            else ( randomSheepMover model.sheep model.seed, False )
     in
         if List.length model.sheep > 0
         then ( { position = newPosition, hasCargo = cargo }, model.score, newSheep )
@@ -187,8 +201,74 @@ moveSingleToward : Int -> Int -> Int
 moveSingleToward a b =
     if a > b then a - 1 else a + 1
 
---moveSheep : Model -> Sheep
-moveSheep sheep = sheep
+moveSheep : Random.Seed -> Sheep -> Sheep
+moveSheep seed sheep = 
+    let 
+        ( changeDirection, nextSeed ) = Random.generate ( Random.int 0 10 ) seed
+        direction = if changeDirection < 2 then createRandomDirection nextSeed else sheep.moveDirection
+    in
+        progressSheep sheep.position direction
+
+progressSheep position direction =
+    let
+        ( x, y ) = position
+        newPosition = case direction of
+            Up          -> ( x    , y - 1 )
+            RightUp     -> ( x + 1, y - 1 )
+            Right       -> ( x + 1, y     )
+            RightDown   -> ( x + 1, y + 1 )
+            Down        -> ( x    , y + 1 )
+            LeftDown    -> ( x - 1, y + 1 )
+            Left        -> ( x - 1, y     )
+            LeftUp      -> ( x - 1, y - 1 )
+        correctedPosition = checkForCollision newPosition
+    in
+        Sheep newPosition direction
+
+checkForCollision position =
+    position |> horizontalCorrection |> verticalCorrection
+
+horizontalCorrection ( x, y ) =
+    let
+        x1 = if x < 0 then 0 else x
+        x2 = if x1 >= gridSize then gridSize else x1
+    in
+        ( x2, y )
+
+verticalCorrection ( x, y ) =
+    let
+        y1 = if y < 0 then 0 else y
+        y2 = if y1 >= gridSize then gridSize else y1
+    in
+        ( x, y2 )
+
+createRandomDirection seed =
+    let
+        ( directionPair, _ ) = Random.generate randomDirectionPair seed
+    in
+        pairToDirection directionPair
+
+createNewSheep seed =
+    let
+        ( spawnPoint, newSeed ) = Random.generate randomCoordinate seed
+        ( directionPair, _ ) = Random.generate randomDirectionPair seed
+        startingDirection = pairToDirection directionPair
+    in
+        Sheep ( spawnPoint ) ( startingDirection )
+
+pairToDirection pair =
+    case pair of
+        (  0, -1 ) -> Up
+        (  1, -1 ) -> RightUp
+        (  1,  0 ) -> Right
+        (  1,  1 ) -> RightDown
+        (  0,  1 ) -> Down
+        ( -1,  1 ) -> LeftDown
+        ( -1,  0 ) -> Left
+        ( -1, -1 ) -> LeftUp
+        (  _,  _ ) -> RightDown
+
+---------------------------- View --------------------------------------
 
 view : Signal.Address Action -> Model -> Html.Html
 view address model =
@@ -233,9 +313,15 @@ drawCell color element =
     in
         Html.div [ style ] []
 
+-------------------- Helper ---------------
+
 euclidianDistance : Coordinate -> Coordinate -> Float
 euclidianDistance (p1, p2) (q1, q2) =
-  (q1 - p1)^2 + (q2 - p2)^2 |> toFloat |> sqrt
+    (q1 - p1)^2 + (q2 - p2)^2 |> toFloat |> sqrt
+
+randomCoordinate = Random.pair ( Random.int 0 24 ) ( Random.int 0 24 )
+
+randomDirectionPair = Random.pair ( Random.int -1 1 ) ( Random.int -1 1 )
 
 -------------------- Initial Values ---------------
 
@@ -269,45 +355,65 @@ outerWalls =
     , { position = ( 16, 0 ), orientation = LeftRight }
     , { position = ( 17, 0 ), orientation = LeftRight }
     , { position = ( 18, 0 ), orientation = LeftRight }
-    , { position = ( 19, 0 ), orientation = LeftBottom }
-    , { position = ( 19, 1 ), orientation = TopBottom }
-    , { position = ( 19, 2 ), orientation = TopBottom }
-    , { position = ( 19, 3 ), orientation = TopBottom }
-    , { position = ( 19, 4 ), orientation = TopBottom }
-    , { position = ( 19, 5 ), orientation = TopBottom }
-    , { position = ( 19, 6 ), orientation = TopBottom }
-    , { position = ( 19, 7 ), orientation = TopBottom }
-    , { position = ( 19, 8 ), orientation = TopBottom }
-    , { position = ( 19, 9 ), orientation = TopBottom }
-    , { position = ( 19, 10 ), orientation = TopBottom }
-    , { position = ( 19, 11 ), orientation = TopBottom }
-    , { position = ( 19, 12 ), orientation = TopBottom }
-    , { position = ( 19, 13 ), orientation = TopBottom }
-    , { position = ( 19, 14 ), orientation = TopBottom }
-    , { position = ( 19, 15 ), orientation = TopBottom }
-    , { position = ( 19, 16 ), orientation = TopBottom }
-    , { position = ( 19, 17 ), orientation = TopBottom }
-    , { position = ( 19, 18 ), orientation = TopBottom }
-    , { position = ( 19, 19 ), orientation = LeftTop }
-    , { position = ( 18, 19 ), orientation = LeftRight }
-    , { position = ( 17, 19 ), orientation = LeftRight }
-    , { position = ( 16, 19 ), orientation = LeftRight }
-    , { position = ( 15, 19 ), orientation = LeftRight }
-    , { position = ( 14, 19 ), orientation = LeftRight }
-    , { position = ( 13, 19 ), orientation = LeftRight }
-    , { position = ( 12, 19 ), orientation = LeftRight }
-    , { position = ( 11, 19 ), orientation = LeftRight }
-    , { position = ( 10, 19 ), orientation = LeftRight }
-    , { position = ( 9, 19 ), orientation = LeftRight }
-    , { position = ( 8, 19 ), orientation = LeftRight }
-    , { position = ( 7, 19 ), orientation = LeftRight }
-    , { position = ( 6, 19 ), orientation = LeftRight }
-    , { position = ( 5, 19 ), orientation = LeftRight }
-    , { position = ( 4, 19 ), orientation = LeftRight }
-    , { position = ( 3, 19 ), orientation = LeftRight }
-    , { position = ( 2, 19 ), orientation = LeftRight }
-    , { position = ( 1, 19 ), orientation = LeftRight }
-    , { position = ( 0, 19 ), orientation = TopRight }
+    , { position = ( 19, 0 ), orientation = LeftRight }
+    , { position = ( 20, 0 ), orientation = LeftRight }
+    , { position = ( 21, 0 ), orientation = LeftRight }
+    , { position = ( 22, 0 ), orientation = LeftRight }
+    , { position = ( 23, 0 ), orientation = LeftRight }
+    , { position = ( 24, 0 ), orientation = LeftBottom }
+    , { position = ( 24, 1 ), orientation = TopBottom }
+    , { position = ( 24, 2 ), orientation = TopBottom }
+    , { position = ( 24, 3 ), orientation = TopBottom }
+    , { position = ( 24, 4 ), orientation = TopBottom }
+    , { position = ( 24, 5 ), orientation = TopBottom }
+    , { position = ( 24, 6 ), orientation = TopBottom }
+    , { position = ( 24, 7 ), orientation = TopBottom }
+    , { position = ( 24, 8 ), orientation = TopBottom }
+    , { position = ( 24, 9 ), orientation = TopBottom }
+    , { position = ( 24, 10 ), orientation = TopBottom }
+    , { position = ( 24, 11 ), orientation = TopBottom }
+    , { position = ( 24, 12 ), orientation = TopBottom }
+    , { position = ( 24, 13 ), orientation = TopBottom }
+    , { position = ( 24, 14 ), orientation = TopBottom }
+    , { position = ( 24, 15 ), orientation = TopBottom }
+    , { position = ( 24, 16 ), orientation = TopBottom }
+    , { position = ( 24, 17 ), orientation = TopBottom }
+    , { position = ( 24, 18 ), orientation = TopBottom }
+    , { position = ( 24, 19 ), orientation = TopBottom }
+    , { position = ( 24, 20 ), orientation = TopBottom }
+    , { position = ( 24, 21 ), orientation = TopBottom }
+    , { position = ( 24, 22 ), orientation = TopBottom }
+    , { position = ( 24, 23 ), orientation = TopBottom }
+    , { position = ( 24, 24 ), orientation = LeftTop }
+    , { position = ( 23, 24 ), orientation = LeftRight }
+    , { position = ( 22, 24 ), orientation = LeftRight }
+    , { position = ( 21, 24 ), orientation = LeftRight }
+    , { position = ( 20, 24 ), orientation = LeftRight }
+    , { position = ( 19, 24 ), orientation = LeftRight }
+    , { position = ( 18, 24 ), orientation = LeftRight }
+    , { position = ( 17, 24 ), orientation = LeftRight }
+    , { position = ( 16, 24 ), orientation = LeftRight }
+    , { position = ( 15, 24 ), orientation = LeftRight }
+    , { position = ( 14, 24 ), orientation = LeftRight }
+    , { position = ( 13, 24 ), orientation = LeftRight }
+    , { position = ( 12, 24 ), orientation = LeftRight }
+    , { position = ( 11, 24 ), orientation = LeftRight }
+    , { position = ( 10, 24 ), orientation = LeftRight }
+    , { position = ( 9, 24 ), orientation = LeftRight }
+    , { position = ( 8, 24 ), orientation = LeftRight }
+    , { position = ( 7, 24 ), orientation = LeftRight }
+    , { position = ( 6, 24 ), orientation = LeftRight }
+    , { position = ( 5, 24 ), orientation = LeftRight }
+    , { position = ( 4, 24 ), orientation = LeftRight }
+    , { position = ( 3, 24 ), orientation = LeftRight }
+    , { position = ( 2, 24 ), orientation = LeftRight }
+    , { position = ( 1, 24 ), orientation = LeftRight }
+    , { position = ( 0, 24 ), orientation = TopRight }
+    , { position = ( 0, 23 ), orientation = TopBottom }
+    , { position = ( 0, 22 ), orientation = TopBottom }
+    , { position = ( 0, 21 ), orientation = TopBottom }
+    , { position = ( 0, 20 ), orientation = TopBottom }
+    , { position = ( 0, 19 ), orientation = TopBottom }
     , { position = ( 0, 18 ), orientation = TopBottom }
     , { position = ( 0, 17 ), orientation = TopBottom }
     , { position = ( 0, 16 ), orientation = TopBottom }
@@ -334,10 +440,10 @@ initialAi =
     }
 
 initialSheep =
-    [ { position = ( 9, 9 ), moveDirection = Right }
-    , { position = ( 9, 12 ), moveDirection = Up }
-    , { position = ( 12, 12 ), moveDirection = Left }
-    , { position = ( 12, 9 ), moveDirection = Down }
+    [ { position = ( 10, 10 ), moveDirection = LeftUp    }
+    , { position = ( 11, 10 ), moveDirection = RightUp   }
+    , { position = ( 11, 11 ), moveDirection = RightDown }
+    , { position = ( 10, 11 ), moveDirection = LeftDown  }
     ]
 
 -------------------- CSS --------------------------
@@ -364,7 +470,8 @@ homeStyle =
             ]
 
 cellSize = 25
-fieldSize = 20 * cellSize
+fieldSize = 25 * cellSize
+gridSize = 25
 
 wallColor = "black"
 sheepColor = "white"
