@@ -13,11 +13,12 @@ import Random
 type alias Model =
   { ai : AI
   , home : Coordinate
-  , sheep : List Sheep
+  , rabbits : List Rabbit
   , walls : List Wall
   , fences : List Fence
   , score : Score
   , seed : Random.Seed
+  , turns : Int
   }
 
 
@@ -27,7 +28,7 @@ type alias AI =
   }
 
 
-type alias Sheep =
+type alias Rabbit =
   { position : Coordinate
   , moveDirection : Direction
   }
@@ -50,12 +51,6 @@ type alias Cargo =
 
 type alias Score =
   Int
-
-
-type FieldType
-  = Empty
-  | Blocked
-  | ContainsSheep
 
 
 type alias Coordinate =
@@ -100,12 +95,9 @@ type Action
 -------------- Model --------------
 
 
+port currentTime : Int
 main =
   Signal.map (view actions.address) model
-
-
-
--- actions from user input
 
 
 actions : Signal.Mailbox Action
@@ -118,40 +110,44 @@ model =
   Signal.foldp update initialModel (Signal.sampleOn ticker actions.signal)
 
 
-
---ticker : Signal Time.Time
-
-
 ticker =
-  Time.every (Time.second / 4)
+  Time.every (Time.second / 2)
 
 
 update : Action -> Model -> Model
 update action model =
   case action of
     NoOp ->
-      move model
+      checkWinSituation model
 
     _ ->
-      move model
+      checkWinSituation model
+
+
+checkWinSituation model =
+  if model.turns > maxTurns then
+    model
+  else
+    move model
 
 
 move : Model -> Model
 move model =
   let
-    ( newAi, newScore, newSheep ) =
+    ( newAi, newScore, newRabbits ) =
       if model.ai.hasCargo then
         goHome model
       else
-        findSheep model
+        findRabbit model
   in
     { ai = newAi
     , home = model.home
-    , sheep = newSheep
+    , rabbits = newRabbits
     , walls = model.walls
     , fences = model.fences
     , score = newScore
     , seed = createNewSeed model.seed
+    , turns = model.turns + 1
     }
 
 
@@ -163,7 +159,7 @@ createNewSeed seed =
     newSeed
 
 
-goHome : Model -> ( AI, Score, List Sheep )
+goHome : Model -> ( AI, Score, List Rabbit )
 goHome model =
   if model.ai.position == model.home then
     dropCargo model
@@ -171,31 +167,136 @@ goHome model =
     moveCloserToHome model
 
 
-dropCargo : Model -> ( AI, Score, List Sheep )
+dropCargo : Model -> ( AI, Score, List Rabbit )
 dropCargo model =
   let
-    newSheep =
-      randomSheepMover model.sheep model.seed
+    newbornRabbit =
+      createNewRabbit model.seed
+
+    newRabbits =
+      moveRabbits model.rabbits model.seed |> (::) newbornRabbit
+
+    newScore =
+      model.score + 1
   in
-    ( { position = model.ai.position, hasCargo = False }, model.score + 1, newSheep )
+    ( { position = model.ai.position, hasCargo = False }, newScore, newRabbits )
 
 
-randomSheepMover sheep seed =
+moveRabbits : List Rabbit -> Random.Seed -> List Rabbit
+moveRabbits rabbits seed =
+  randomRabbitMover rabbits seed |> List.map progressRabbit
+
+
+randomRabbitMover : List Rabbit -> Random.Seed -> List Rabbit
+randomRabbitMover rabbits seed =
   let
-    mover =
-      moveSheep seed
+    positions =
+      List.map .position rabbits
+
+    ( newDirections, secondSeed ) =
+      Random.generate (directionListCreator (List.length rabbits)) seed
+
+    newRabbits =
+      List.map pairToDirection newDirections |> List.map2 Rabbit positions
+
+    ( changeDirectionList, _ ) =
+      Random.generate (Random.list (List.length rabbits) (Random.int 0 10)) secondSeed
   in
-    List.map mover sheep
+    List.map3 (,,) changeDirectionList newRabbits rabbits |> List.map pickRabbit
 
 
-moveCloserToHome : Model -> ( AI, Score, List Sheep )
+pickRabbit : ( Int, Rabbit, Rabbit ) -> Rabbit
+pickRabbit ( x, newRabbit, oldRabbit ) =
+  if x < volatilityThreshold then
+    newRabbit
+  else
+    oldRabbit
+
+
+progressRabbit rabbit =
+  let
+    ( x, y ) =
+      rabbit.position
+
+    newPosition =
+      case rabbit.moveDirection of
+        Up ->
+          ( x, y - 1 )
+
+        RightUp ->
+          ( x + 1, y - 1 )
+
+        Right ->
+          ( x + 1, y )
+
+        RightDown ->
+          ( x + 1, y + 1 )
+
+        Down ->
+          ( x, y + 1 )
+
+        LeftDown ->
+          ( x - 1, y + 1 )
+
+        Left ->
+          ( x - 1, y )
+
+        LeftUp ->
+          ( x - 1, y - 1 )
+
+    correctedPosition =
+      checkForCollision newPosition
+  in
+    Rabbit correctedPosition rabbit.moveDirection
+
+
+checkForCollision position =
+  position |> horizontalCorrection |> verticalCorrection
+
+
+horizontalCorrection ( x, y ) =
+  let
+    x1 =
+      if x < 1 then
+        1
+      else
+        x
+
+    x2 =
+      if x1 >= gridSize - 1 then
+        gridSize - 2
+      else
+        x1
+  in
+    ( x2, y )
+
+
+verticalCorrection ( x, y ) =
+  let
+    y1 =
+      if y < 1 then
+        1
+      else
+        y
+
+    y2 =
+      if y1 >= gridSize - 1 then
+        gridSize - 2
+      else
+        y1
+  in
+    ( x, y2 )
+
+
+directionListCreator count =
+  randomDirectionPairGenerator |> Random.list count
+
+
+moveCloserToHome : Model -> ( AI, Score, List Rabbit )
 moveCloserToHome model =
   let
-    ai =
-      model.ai
-
     ( x, y ) =
-      ai.position
+      model.ai.position
 
     newPosition =
       if x > y then
@@ -203,68 +304,67 @@ moveCloserToHome model =
       else
         ( x, y - 1 )
 
-    newSheep =
-      randomSheepMover model.sheep model.seed
+    newRabbits =
+      moveRabbits model.rabbits model.seed
   in
-    ( { position = newPosition, hasCargo = model.ai.hasCargo }, model.score, newSheep )
+    ( { position = newPosition, hasCargo = model.ai.hasCargo }, model.score, newRabbits )
 
 
-findSheep : Model -> ( AI, Score, List Sheep )
-findSheep model =
+findRabbit : Model -> ( AI, Score, List Rabbit )
+findRabbit model =
   let
-    closestSheep =
-      pickClosestSheep model.ai model.sheep
+    closestRabbit =
+      pickClosestRabbit model.ai model.rabbits
 
-    closestSheepPosition =
-      closestSheep.position
+    closestRabbitPosition =
+      closestRabbit.position
 
-    newPosition =
-      moveToward model.ai.position closestSheepPosition
+    newAiPosition =
+      moveToward model.ai.position closestRabbitPosition
 
-    ( newSheep, cargo ) =
-      if model.ai.position == closestSheepPosition then
-        pickUpSheep model.sheep closestSheep
+    ( updatedPosition, (newRabbits, cargo) ) =
+      if model.ai.position == closestRabbitPosition then
+        ( model.ai.position, (pickUpRabbit model.rabbits closestRabbit))
       else
-        ( randomSheepMover model.sheep model.seed, False )
+        ( newAiPosition, (moveRabbits model.rabbits model.seed, False) )
   in
-    if List.length model.sheep > 0 then
-      ( { position = newPosition, hasCargo = cargo }, model.score, newSheep )
-    else
-      ( model.ai, model.score, model.sheep )
+    ( { position = updatedPosition, hasCargo = cargo }, model.score, newRabbits )
 
 
-pickClosestSheep : AI -> List Sheep -> Sheep
-pickClosestSheep ai sheep =
+
+
+pickClosestRabbit : AI -> List Rabbit -> Rabbit
+pickClosestRabbit ai rabbits =
   let
     comparer =
       compareAndSave ai.position
   in
-    List.foldr comparer [] sheep |> List.head |> Maybe.withDefault { position = ( 999, 999 ), moveDirection = Left }
+    List.foldr comparer [] rabbits |> List.head |> Maybe.withDefault { position = ( 999, 999 ), moveDirection = Left }
 
 
-compareAndSave target sheep acc =
+compareAndSave target rabbit acc =
   let
     closest =
       List.head acc |> Maybe.withDefault { position = ( 999, 999 ), moveDirection = Left }
 
     distanceToCurrent =
-      euclidianDistance target sheep.position
+      euclidianDistance target rabbit.position
 
     distanceToSaved =
       euclidianDistance target closest.position
   in
     if distanceToCurrent < distanceToSaved then
-      [ sheep ]
+      [ rabbit ]
     else
       acc
 
 
-distanceToSheep x sheep =
-  euclidianDistance x sheep.position
+distanceToRabbit x rabbit =
+  euclidianDistance x rabbit.position
 
 
-pickUpSheep allSheep closest =
-  ( List.filter ((/=) closest) allSheep, True )
+pickUpRabbit rabbits closest =
+  ( List.filter ((/=) closest) rabbits, True )
 
 
 moveToward : Coordinate -> Coordinate -> Coordinate
@@ -308,116 +408,26 @@ moveSingleToward a b =
     a + 1
 
 
-moveSheep : Random.Seed -> Sheep -> Sheep
-moveSheep seed sheep =
-  let
-    ( changeDirection, nextSeed ) =
-      Random.generate (Random.int 0 10) seed
-
-    direction =
-      if changeDirection < 2 then
-        createRandomDirection nextSeed
-      else
-        sheep.moveDirection
-  in
-    progressSheep sheep.position direction
-
-
-progressSheep position direction =
-  let
-    ( x, y ) =
-      position
-
-    newPosition =
-      case direction of
-        Up ->
-          ( x, y - 1 )
-
-        RightUp ->
-          ( x + 1, y - 1 )
-
-        Right ->
-          ( x + 1, y )
-
-        RightDown ->
-          ( x + 1, y + 1 )
-
-        Down ->
-          ( x, y + 1 )
-
-        LeftDown ->
-          ( x - 1, y + 1 )
-
-        Left ->
-          ( x - 1, y )
-
-        LeftUp ->
-          ( x - 1, y - 1 )
-
-    correctedPosition =
-      checkForCollision newPosition
-  in
-    Sheep newPosition direction
-
-
-checkForCollision position =
-  position |> horizontalCorrection |> verticalCorrection
-
-
-horizontalCorrection ( x, y ) =
-  let
-    x1 =
-      if x < 0 then
-        0
-      else
-        x
-
-    x2 =
-      if x1 >= gridSize then
-        gridSize - 1
-      else
-        x1
-  in
-    ( x2, y )
-
-
-verticalCorrection ( x, y ) =
-  let
-    y1 =
-      if y < 0 then
-        0
-      else
-        y
-
-    y2 =
-      if y1 >= gridSize then
-        gridSize - 1
-      else
-        y1
-  in
-    ( x, y2 )
-
-
 createRandomDirection seed =
   let
     ( directionPair, _ ) =
-      Random.generate randomDirectionPair seed
+      Random.generate randomDirectionPairGenerator seed
   in
     pairToDirection directionPair
 
 
-createNewSheep seed =
+createNewRabbit seed =
   let
     ( spawnPoint, newSeed ) =
-      Random.generate randomCoordinate seed
+      Random.generate randomCoordinateGenerator seed
 
     ( directionPair, _ ) =
-      Random.generate randomDirectionPair seed
+      Random.generate randomDirectionPairGenerator seed
 
     startingDirection =
       pairToDirection directionPair
   in
-    Sheep (spawnPoint) (startingDirection)
+    Rabbit (spawnPoint) (startingDirection)
 
 
 pairToDirection pair =
@@ -456,23 +466,49 @@ pairToDirection pair =
 
 view : Signal.Address Action -> Model -> Html.Html
 view address model =
+  if model.turns > maxTurns then
+    drawEnd model.score
+  else
+    drawScene model
+
+
+drawEnd score =
+  Html.div [ resultScreen ] [ toString score |> (++) winningString |> Html.text ]
+
+
+drawScene model =
   let
     subDivs =
       List.concat
-        [ drawElements model.walls wallColor
+        [ toString model.score |> drawScore
+        , drawElements model.walls wallColor
         , drawElements model.fences fenceColor
-        , drawElements model.sheep sheepColor
+        , drawElements model.rabbits rabbitColor
         , drawElement model.ai aiColor
         , [ Html.div [ homeStyle ] [] ]
         ]
   in
     Html.div
-      [ pageStyle ]
+      [ pageStyleAttribute ]
       subDivs
 
 
+drawScore score =
+  let
+    size =
+      toString cellSize ++ "px"
 
---drawElements : List a -> String -> Html.Html
+    style =
+      Attr.style
+        [ ( "background-color", scoreColor )
+        , ( "position", "absolute" )
+        , ( "margin-left", "0px" )
+        , ( "margin-top", "0px" )
+        , ( "width", size )
+        , ( "height", size )
+        ]
+  in
+    [ Html.div [ style ] [ Html.text score ] ]
 
 
 drawElements elements color =
@@ -529,11 +565,11 @@ euclidianDistance ( p1, p2 ) ( q1, q2 ) =
   (q1 - p1) ^ 2 + (q2 - p2) ^ 2 |> toFloat |> sqrt
 
 
-randomCoordinate =
-  Random.pair (Random.int 0 24) (Random.int 0 24)
+randomCoordinateGenerator =
+  Random.pair (Random.int 1 23) (Random.int 1 23)
 
 
-randomDirectionPair =
+randomDirectionPairGenerator =
   Random.pair (Random.int -1 1) (Random.int -1 1)
 
 
@@ -544,17 +580,17 @@ randomDirectionPair =
 initialModel =
   { ai = initialAi
   , home = ( 1, 1 )
-  , sheep = initialSheep
+  , rabbits = initialRabbits
   , walls = outerWalls
   , fences = []
   , score = 0
-  , seed = Random.initialSeed 42
+  , seed = Random.initialSeed currentTime
+  , turns = 0
   }
 
 
 outerWalls =
-  [ { position = ( 0, 0 ), orientation = BottomRight }
-  , { position = ( 1, 0 ), orientation = LeftRight }
+  [ { position = ( 1, 0 ), orientation = LeftRight }
   , { position = ( 2, 0 ), orientation = LeftRight }
   , { position = ( 3, 0 ), orientation = LeftRight }
   , { position = ( 4, 0 ), orientation = LeftRight }
@@ -658,7 +694,7 @@ initialAi =
   }
 
 
-initialSheep =
+initialRabbits =
   [ { position = ( 10, 10 ), moveDirection = LeftUp }
   , { position = ( 11, 10 ), moveDirection = RightUp }
   , { position = ( 11, 11 ), moveDirection = RightDown }
@@ -666,16 +702,33 @@ initialSheep =
   ]
 
 
+winningString =
+  "Yay, you won with this many points: "
+
+
 
 -------------------- CSS --------------------------
 
 
+pageStyleAttribute =
+  Attr.style pageStyle
+
+
 pageStyle =
-  Attr.style
-    [ ( "background-color", "chartreuse" )
-    , ( "width", toString fieldSize ++ "px" )
-    , ( "height", toString fieldSize ++ "px" )
-    ]
+  [ ( "background-color", "chartreuse" )
+  , ( "width", toString fieldSize ++ "px" )
+  , ( "height", toString fieldSize ++ "px" )
+  ]
+
+
+resultScreen =
+  pageStyle
+    ++ [ ( "opacity", "0.9" )
+       , ( "font-size", "52" )
+       , ( "text-align", "center" )
+       , ( "padding-top", toString (fieldSize / 2) ++ "px" )
+       ]
+    |> Attr.style
 
 
 homeStyle =
@@ -708,16 +761,28 @@ gridSize =
   25
 
 
+maxTurns =
+  300
+
+
+volatilityThreshold =
+  2
+
+
 wallColor =
   "black"
 
 
-sheepColor =
+rabbitColor =
   "white"
 
 
 aiColor =
   "red"
+
+
+scoreColor =
+  "lawngreen"
 
 
 fenceColor =
