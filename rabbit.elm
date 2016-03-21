@@ -5,7 +5,8 @@ import Html.Attributes as Attr
 import Html.Events as Events
 import Time
 import Random
-
+import Keyboard
+import Mouse
 
 -------------- Model --------------
 
@@ -19,6 +20,7 @@ type alias Model =
   , score : Score
   , seed : Random.Seed
   , turns : Int
+  , state : State
   }
 
 
@@ -66,7 +68,7 @@ type alias Wall =
 type alias Fence =
   { position : Coordinate
   , orientation : Orientation
-  , age : Time.Time
+  , age : Int
   }
 
 
@@ -84,92 +86,113 @@ type Orientation
   | BottomLeftTop
 
 
-type Action
-  = NoOp
-  | Start
-  | Pause
-  | PlaceBlock
+type State
+  = Pause
+  | End
+  | Running
+
+type alias Actions = ((Int, Int), Bool, Bool)
 
 
 
 -------------- Model --------------
 
-
+-- We only need this for the initial randomicity seed
 port currentTime : Int
+
 main =
-  Signal.map (view actions.address) model
-
-
-actions : Signal.Mailbox Action
-actions =
-  Signal.mailbox NoOp
+  Signal.map view model
 
 
 model : Signal Model
 model =
-  Signal.foldp update initialModel (Signal.sampleOn ticker actions.signal)
+  Signal.foldp update initialModel (Signal.map3 (,,) (Signal.sampleOn (Time.fps 10) Mouse.position) Mouse.isDown Keyboard.space)
 
 
-ticker =
-  Time.every (Time.second / 2)
-
-
-update : Action -> Model -> Model
-update action model =
-  case action of
-    NoOp ->
-      checkWinSituation model
-
-    _ ->
-      checkWinSituation model
-
-
-checkWinSituation model =
-  if model.turns > maxTurns then
-    model
-  else
-    move model
-
-
-move : Model -> Model
-move model =
+update : Actions -> Model -> Model
+update actions model =
   let
-    ( newAi, newScore, newRabbits ) =
+    (_, _, space) = actions
+  in
+    case model.state of
+      Pause -> if space then checkWinSituation model actions else model
+      End -> if space then checkWinSituation initialModel actions else model
+      Running -> if space then pauseGame model else checkWinSituation model actions
+
+
+pauseGame : Model -> Model
+pauseGame model = Model model.ai model.home model.rabbits model.walls model.fences model.score model.seed model.turns Pause
+
+
+checkWinSituation : Model -> Actions -> Model
+checkWinSituation model actions =
+  let
+    newState = if model.turns > maxTurns then End else Running
+  in
+    case newState of
+      Running -> move model actions
+      End -> Model model.ai model.home model.rabbits model.walls model.fences model.score model.seed model.turns End
+      Pause -> model
+
+
+move : Model -> Actions -> Model
+move model actions =
+  let
+    (_, _, space) = actions
+    ( newAi, newScore, newRabbits, newFences ) =
       if model.ai.hasCargo then
-        goHome model
+        goHome model actions
       else
-        findRabbit model
+        findRabbit model actions
   in
     { ai = newAi
     , home = model.home
     , rabbits = newRabbits
     , walls = model.walls
-    , fences = model.fences
+    , fences = newFences
     , score = newScore
     , seed = createNewSeed model.seed
     , turns = model.turns + 1
+    , state = Running
     }
 
 
 createNewSeed seed =
   let
     ( _, newSeed ) =
-      Random.generate (Random.int 0 10000) seed
+      Random.generate (Random.int 0 42) seed
   in
     newSeed
 
 
-goHome : Model -> ( AI, Score, List Rabbit )
-goHome model =
+goHome : Model -> Actions -> ( AI, Score, List Rabbit, List Fence )
+goHome model actions =
   if model.ai.position == model.home then
-    dropCargo model
+    dropCargo model actions
   else
-    moveCloserToHome model
+    moveCloserToHome model actions
 
 
-dropCargo : Model -> ( AI, Score, List Rabbit )
-dropCargo model =
+addFence : List Fence -> Actions -> List Fence
+addFence fences ((x, y), mouseClicked, _) =
   let
+    newFences = if mouseClicked then Fence (x, y) TopBottom 10 :: fences else fences
+  in
+    ageFences newFences
+
+ageFences : List Fence -> List Fence
+ageFences fences =
+  List.map ageSingleFence fences |> List.filter (\fence -> fence.age > 0)
+
+ageSingleFence : Fence -> Fence
+ageSingleFence {position, orientation, age} =
+  Fence position orientation (age - 1)
+
+dropCargo : Model -> Actions -> ( AI, Score, List Rabbit, List Fence )
+dropCargo model actions =
+  let
+    newFences = addFence model.fences actions
+
     newbornRabbit =
       createNewRabbit model.seed
 
@@ -179,7 +202,7 @@ dropCargo model =
     newScore =
       model.score + 1
   in
-    ( { position = model.ai.position, hasCargo = False }, newScore, newRabbits )
+    ( { position = model.ai.position, hasCargo = False }, newScore, newRabbits, newFences )
 
 
 moveRabbits : List Rabbit -> Random.Seed -> List Rabbit
@@ -212,7 +235,7 @@ pickRabbit ( x, newRabbit, oldRabbit ) =
   else
     oldRabbit
 
-
+progressRabbit : Rabbit -> Rabbit
 progressRabbit rabbit =
   let
     ( x, y ) =
@@ -250,10 +273,12 @@ progressRabbit rabbit =
     Rabbit correctedPosition rabbit.moveDirection
 
 
+checkForCollision : Coordinate -> Coordinate
 checkForCollision position =
   position |> horizontalCorrection |> verticalCorrection
 
 
+horizontalCorrection : Coordinate -> Coordinate
 horizontalCorrection ( x, y ) =
   let
     x1 =
@@ -271,6 +296,7 @@ horizontalCorrection ( x, y ) =
     ( x2, y )
 
 
+verticalCorrection : Coordinate -> Coordinate
 verticalCorrection ( x, y ) =
   let
     y1 =
@@ -292,9 +318,11 @@ directionListCreator count =
   randomDirectionPairGenerator |> Random.list count
 
 
-moveCloserToHome : Model -> ( AI, Score, List Rabbit )
-moveCloserToHome model =
+moveCloserToHome : Model -> Actions -> ( AI, Score, List Rabbit, List Fence )
+moveCloserToHome model actions =
   let
+    newFences = addFence model.fences actions
+
     ( x, y ) =
       model.ai.position
 
@@ -307,12 +335,14 @@ moveCloserToHome model =
     newRabbits =
       moveRabbits model.rabbits model.seed
   in
-    ( { position = newPosition, hasCargo = model.ai.hasCargo }, model.score, newRabbits )
+    ( { position = newPosition, hasCargo = model.ai.hasCargo }, model.score, newRabbits, newFences )
 
 
-findRabbit : Model -> ( AI, Score, List Rabbit )
-findRabbit model =
+findRabbit : Model -> Actions -> ( AI, Score, List Rabbit, List Fence )
+findRabbit model actions =
   let
+    newFences = addFence model.fences actions
+
     closestRabbit =
       pickClosestRabbit model.ai model.rabbits
 
@@ -328,7 +358,7 @@ findRabbit model =
       else
         ( newAiPosition, (moveRabbits model.rabbits model.seed, False) )
   in
-    ( { position = updatedPosition, hasCargo = cargo }, model.score, newRabbits )
+    ( { position = updatedPosition, hasCargo = cargo }, model.score, newRabbits, newFences )
 
 
 
@@ -342,6 +372,7 @@ pickClosestRabbit ai rabbits =
     List.foldr comparer [] rabbits |> List.head |> Maybe.withDefault { position = ( 999, 999 ), moveDirection = Left }
 
 
+compareAndSave : Coordinate -> Rabbit -> List Rabbit -> List Rabbit
 compareAndSave target rabbit acc =
   let
     closest =
@@ -359,10 +390,7 @@ compareAndSave target rabbit acc =
       acc
 
 
-distanceToRabbit x rabbit =
-  euclidianDistance x rabbit.position
-
-
+pickUpRabbit : List Rabbit -> Rabbit -> ( List Rabbit, Bool )
 pickUpRabbit rabbits closest =
   ( List.filter ((/=) closest) rabbits, True )
 
@@ -408,6 +436,7 @@ moveSingleToward a b =
     a + 1
 
 
+createRandomDirection : Random.Seed -> Direction
 createRandomDirection seed =
   let
     ( directionPair, _ ) =
@@ -415,7 +444,7 @@ createRandomDirection seed =
   in
     pairToDirection directionPair
 
-
+createNewRabbit : Random.Seed -> Rabbit
 createNewRabbit seed =
   let
     ( spawnPoint, newSeed ) =
@@ -430,6 +459,7 @@ createNewRabbit seed =
     Rabbit (spawnPoint) (startingDirection)
 
 
+pairToDirection : (Int, Int) -> Direction
 pairToDirection pair =
   case pair of
     ( 0, -1 ) ->
@@ -464,8 +494,8 @@ pairToDirection pair =
 ---------------------------- View --------------------------------------
 
 
-view : Signal.Address Action -> Model -> Html.Html
-view address model =
+view : Model -> Html.Html
+view model =
   if model.turns > maxTurns then
     drawEnd model.score
   else
@@ -586,6 +616,7 @@ initialModel =
   , score = 0
   , seed = Random.initialSeed currentTime
   , turns = 0
+  , state = Running
   }
 
 
