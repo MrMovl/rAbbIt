@@ -23,6 +23,7 @@ instructions =
   , Html.li [] [ Html.text "The white boxes are the bunnies chaotically frolicking through the meddow (green)." ]
   , Html.li [] [ Html.text "You can help the AI by clicking on the field and placing fences. These can constrict the bunny movement (for a while)." ]
   , Html.li [] [ Html.text "The more bunnies you two catch the more points you get when the game is over." ]
+  , Html.li [] [ Html.text "Press Space to pause or unpause the game." ]
   ]
 
 
