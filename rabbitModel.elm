@@ -142,9 +142,12 @@ type alias Actions =
 cellSize =
   25
 
+dimensions = 
+  25
+
 
 fieldSize =
-  25 * cellSize
+  dimensions * cellSize
 
 
 maxTurns =
@@ -160,7 +163,7 @@ fenceLifetime =
 
 
 fps =
-  10
+  7
 
 
 wallColor =
@@ -188,7 +191,7 @@ grassColor =
 
 
 winningString =
-  "Yay, you won with this many points: "
+  "Yay, you won! These are your points: "
 
 
 
@@ -205,11 +208,19 @@ initialModel =
   , score = 0
   , seed = Random.initialSeed currentTime
   , turns = 0
-  , state = Running
+  , state = Pause
   }
 
+outerWalls = List.append corners straightWalls
 
-outerWalls =
+corners =
+  [ { position = ( 0, dimensions - 1 ), orientation = LeftBottom }
+  , { position = ( dimensions - 1, 0 ), orientation = TopRight }
+  , { position = ( dimensions - 1, dimensions - 1 ), orientation = LeftTop }
+  ]
+
+
+straightWalls =
   [ { position = ( 1, 0 ), orientation = LeftRight }
   , { position = ( 2, 0 ), orientation = LeftRight }
   , { position = ( 3, 0 ), orientation = LeftRight }

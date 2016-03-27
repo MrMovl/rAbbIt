@@ -218,23 +218,32 @@ progressRabbit fences walls rabbit =
 
         LeftUp ->
           ( x - 1, y - 1 )
-
-    correctedPosition =
-      checkForCollision fences walls newPosition rabbit.position
   in
-    Rabbit correctedPosition rabbit.moveDirection
+    checkForCollision fences walls newPosition rabbit
 
 
-checkForCollision : List Fence -> List Wall -> Coordinate -> Coordinate -> Coordinate
-checkForCollision fences walls newPosition oldPosition =
+checkForCollision : List Fence -> List Wall -> Coordinate -> Rabbit -> Rabbit
+checkForCollision fences walls newPosition rabbit =
   let
     isNoCollision =
       \element -> element.position /= newPosition
   in
     if List.all isNoCollision fences && List.all isNoCollision walls then
-      newPosition
+      Rabbit newPosition rabbit.moveDirection
     else
-      oldPosition
+      invertDirection rabbit.moveDirection |> Rabbit rabbit.position
+
+invertDirection : Direction -> Direction
+invertDirection direction =
+  case direction of
+        Up -> Down
+        RightUp -> LeftDown
+        Right -> Left
+        RightDown -> LeftUp
+        Down -> Up
+        LeftDown -> RightUp
+        Left -> Right
+        LeftUp -> RightDown
 
 
 directionListCreator count =
