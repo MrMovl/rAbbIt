@@ -17,6 +17,7 @@ pageStyle =
   , ( "height", toString fieldSize ++ "px" )
   ]
 
+headerStyle = Attr.style []
 
 resultStyle =
   pageStyle

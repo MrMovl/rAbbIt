@@ -16,6 +16,15 @@ view model =
   else
     drawScene model
 
+instructions : Html.Html
+instructions = 
+  Html.ul [] 
+  [ Html.li [] [ Html.text "The red box is an AI frantically trying to catch fluffy bunnies and bring them home (top left corner)." ]
+  , Html.li [] [ Html.text "The white boxes are the bunnies chaotically frolicking through the meddow (green)." ]
+  , Html.li [] [ Html.text "You can help the AI by clicking on the field and placing fences. These can constrict the bunny movement (for a while)." ]
+  , Html.li [] [ Html.text "The more bunnies you two catch the more points you get when the game is over." ]
+  ]
+
 
 drawEnd score =
   Html.div [ resultStyle ] [ toString score |> (++) winningString |> Html.text ]
@@ -33,9 +42,10 @@ drawScene model =
         , [ Html.div [ homeStyle ] [] ]
         ]
   in
-    Html.div
-      [ pageStyleAttribute ]
-      subDivs
+    Html.div []
+      [ Html.div [ headerStyle ] [ instructions ]
+      , Html.div [ pageStyleAttribute ] subDivs
+      ]
 
 
 drawScore score =
