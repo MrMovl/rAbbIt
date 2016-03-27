@@ -71,7 +71,6 @@ type alias Fence =
   , age : Int
   }
 
-
 type Orientation
   = TopBottom
   | LeftRight
@@ -106,7 +105,7 @@ main =
 
 model : Signal Model
 model =
-  Signal.foldp update initialModel (Signal.map3 (,,) (Signal.sampleOn (Time.fps 10) Mouse.position) Mouse.isDown Keyboard.space)
+  Signal.foldp update initialModel (Signal.map3 (,,) (Signal.sampleOn (Time.fps fps) Mouse.position) Mouse.isDown Keyboard.space)
 
 
 update : Actions -> Model -> Model
@@ -138,7 +137,7 @@ checkWinSituation model actions =
 move : Model -> Actions -> Model
 move model actions =
   let
-    (_, _, space) = actions
+    ( _, _, space ) = actions
     ( newAi, newScore, newRabbits, newFences ) =
       if model.ai.hasCargo then
         goHome model actions
@@ -176,7 +175,7 @@ goHome model actions =
 addFence : List Fence -> Actions -> List Fence
 addFence fences ((x, y), mouseClicked, _) =
   let
-    newFences = if mouseClicked then Fence (x, y) TopBottom 10 :: fences else fences
+    newFences = if mouseClicked then Fence (x // cellSize, y // cellSize) TopBottom fenceLifetime :: fences else fences
   in
     ageFences newFences
 
@@ -197,7 +196,7 @@ dropCargo model actions =
       createNewRabbit model.seed
 
     newRabbits =
-      moveRabbits model.rabbits model.seed |> (::) newbornRabbit
+      moveRabbits model.fences model.walls model.rabbits model.seed |> (::) newbornRabbit
 
     newScore =
       model.score + 1
@@ -205,9 +204,12 @@ dropCargo model actions =
     ( { position = model.ai.position, hasCargo = False }, newScore, newRabbits, newFences )
 
 
-moveRabbits : List Rabbit -> Random.Seed -> List Rabbit
-moveRabbits rabbits seed =
-  randomRabbitMover rabbits seed |> List.map progressRabbit
+moveRabbits : List Fence -> List Wall -> List Rabbit -> Random.Seed -> List Rabbit
+moveRabbits fences walls rabbits seed =
+  let 
+    rabbitProgression = progressRabbit fences walls
+  in
+    randomRabbitMover rabbits seed |> List.map rabbitProgression
 
 
 randomRabbitMover : List Rabbit -> Random.Seed -> List Rabbit
@@ -235,8 +237,8 @@ pickRabbit ( x, newRabbit, oldRabbit ) =
   else
     oldRabbit
 
-progressRabbit : Rabbit -> Rabbit
-progressRabbit rabbit =
+progressRabbit : List Fence -> List Wall -> Rabbit -> Rabbit
+progressRabbit fences walls rabbit =
   let
     ( x, y ) =
       rabbit.position
@@ -268,50 +270,17 @@ progressRabbit rabbit =
           ( x - 1, y - 1 )
 
     correctedPosition =
-      checkForCollision newPosition
+      checkForCollision fences walls newPosition rabbit.position
   in
     Rabbit correctedPosition rabbit.moveDirection
 
 
-checkForCollision : Coordinate -> Coordinate
-checkForCollision position =
-  position |> horizontalCorrection |> verticalCorrection
-
-
-horizontalCorrection : Coordinate -> Coordinate
-horizontalCorrection ( x, y ) =
+checkForCollision : List Fence -> List Wall -> Coordinate -> Coordinate -> Coordinate
+checkForCollision fences walls newPosition oldPosition =
   let
-    x1 =
-      if x < 1 then
-        1
-      else
-        x
-
-    x2 =
-      if x1 >= gridSize - 1 then
-        gridSize - 2
-      else
-        x1
+    isNoCollision = \element -> element.position /= newPosition
   in
-    ( x2, y )
-
-
-verticalCorrection : Coordinate -> Coordinate
-verticalCorrection ( x, y ) =
-  let
-    y1 =
-      if y < 1 then
-        1
-      else
-        y
-
-    y2 =
-      if y1 >= gridSize - 1 then
-        gridSize - 2
-      else
-        y1
-  in
-    ( x, y2 )
+    if List.all isNoCollision fences && List.all isNoCollision walls then newPosition else oldPosition
 
 
 directionListCreator count =
@@ -333,7 +302,7 @@ moveCloserToHome model actions =
         ( x, y - 1 )
 
     newRabbits =
-      moveRabbits model.rabbits model.seed
+      moveRabbits model.fences model.walls model.rabbits model.seed
   in
     ( { position = newPosition, hasCargo = model.ai.hasCargo }, model.score, newRabbits, newFences )
 
@@ -356,7 +325,7 @@ findRabbit model actions =
       if model.ai.position == closestRabbitPosition then
         ( model.ai.position, (pickUpRabbit model.rabbits closestRabbit))
       else
-        ( newAiPosition, (moveRabbits model.rabbits model.seed, False) )
+        ( newAiPosition, (moveRabbits model.fences model.walls model.rabbits model.seed, False) )
   in
     ( { position = updatedPosition, hasCargo = cargo }, model.score, newRabbits, newFences )
 
@@ -798,6 +767,10 @@ maxTurns =
 
 volatilityThreshold =
   2
+
+fenceLifetime = 2000
+
+fps = 10
 
 
 wallColor =
