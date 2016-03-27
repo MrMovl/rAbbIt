@@ -8,11 +8,7 @@ import RabbitView exposing (view)
 import RabbitModel exposing (..)
 
 
--------------- Model --------------
--- We only need this for the initial randomicity seed
-
-
-main =
+main = 
   Signal.map view game
 
 
@@ -110,28 +106,6 @@ goHome model actions =
     dropCargo model actions
   else
     moveCloserToHome model actions
-
-
-addFence : List Fence -> Actions -> List Fence
-addFence fences ( ( x, y ), mouseClicked, _ ) =
-  let
-    newFences =
-      if mouseClicked then
-        Fence ( x // cellSize, y // cellSize ) TopBottom fenceLifetime :: fences
-      else
-        fences
-  in
-    ageFences newFences
-
-
-ageFences : List Fence -> List Fence
-ageFences fences =
-  List.map ageSingleFence fences |> List.filter (\fence -> fence.age > 0)
-
-
-ageSingleFence : Fence -> Fence
-ageSingleFence { position, orientation, age } =
-  Fence position orientation (age - 1)
 
 
 dropCargo : Model -> Actions -> ( AI, Score, List Rabbit, List Fence )
@@ -390,6 +364,29 @@ createNewRabbit seed =
       pairToDirection directionPair
   in
     Rabbit (spawnPoint) (startingDirection)
+
+
+addFence : List Fence -> Actions -> List Fence
+addFence fences ( ( x, y ), mouseClicked, _ ) =
+  let
+    newFences =
+      if mouseClicked then
+        Fence ( x // cellSize, y // cellSize ) TopBottom fenceLifetime :: fences
+      else
+        fences
+  in
+    ageFences newFences
+
+
+ageFences : List Fence -> List Fence
+ageFences fences =
+  List.map ageSingleFence fences |> List.filter (\fence -> fence.age > 0)
+
+
+ageSingleFence : Fence -> Fence
+ageSingleFence { position, orientation, age } =
+  Fence position orientation (age - 1)
+
 
 
 

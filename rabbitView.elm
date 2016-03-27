@@ -44,8 +44,8 @@ drawScene model =
         ]
   in
     Html.div []
-      [ Html.div [ headerStyle ] [ instructions ]
-      , Html.div [ pageStyleAttribute ] subDivs
+      [ Html.div [ pageStyleAttribute ] subDivs
+      , Html.div [ instructionsStyle ] [ instructions ]
       ]
 
 
@@ -56,12 +56,16 @@ drawScore score =
 
     style =
       Attr.style
-        [ ( "background-color", scoreColor )
+        [ ("z-index", "10")
+        , ("vertical-align", "middle")
+        , ( "background-color", "black" )
         , ( "position", "absolute" )
         , ( "margin-left", "0px" )
         , ( "margin-top", "0px" )
         , ( "width", size )
         , ( "height", size )
+        , ("color", "white")
+        , ("text-align", "center")
         ]
   in
     [ Html.div [ style ] [ Html.text score ] ]

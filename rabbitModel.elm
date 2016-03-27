@@ -17,7 +17,12 @@ pageStyle =
   , ( "height", toString fieldSize ++ "px" )
   ]
 
-headerStyle = Attr.style []
+instructionsStyle = 
+  Attr.style 
+    [ ("margin-left", toString (fieldSize + cellSize) ++ "px")
+    , ("position", "absolute")
+    , ("top", "0")
+    ]
 
 resultStyle =
   pageStyle
@@ -218,6 +223,7 @@ corners =
   [ { position = ( 0, dimensions - 1 ), orientation = LeftBottom }
   , { position = ( dimensions - 1, 0 ), orientation = TopRight }
   , { position = ( dimensions - 1, dimensions - 1 ), orientation = LeftTop }
+  , { position = ( 0, 0 ), orientation = BottomRight }
   ]
 
 
@@ -245,7 +251,6 @@ straightWalls =
   , { position = ( 21, 0 ), orientation = LeftRight }
   , { position = ( 22, 0 ), orientation = LeftRight }
   , { position = ( 23, 0 ), orientation = LeftRight }
-  , { position = ( 24, 0 ), orientation = LeftBottom }
   , { position = ( 24, 1 ), orientation = TopBottom }
   , { position = ( 24, 2 ), orientation = TopBottom }
   , { position = ( 24, 3 ), orientation = TopBottom }
@@ -269,7 +274,6 @@ straightWalls =
   , { position = ( 24, 21 ), orientation = TopBottom }
   , { position = ( 24, 22 ), orientation = TopBottom }
   , { position = ( 24, 23 ), orientation = TopBottom }
-  , { position = ( 24, 24 ), orientation = LeftTop }
   , { position = ( 23, 24 ), orientation = LeftRight }
   , { position = ( 22, 24 ), orientation = LeftRight }
   , { position = ( 21, 24 ), orientation = LeftRight }
@@ -293,7 +297,6 @@ straightWalls =
   , { position = ( 3, 24 ), orientation = LeftRight }
   , { position = ( 2, 24 ), orientation = LeftRight }
   , { position = ( 1, 24 ), orientation = LeftRight }
-  , { position = ( 0, 24 ), orientation = TopRight }
   , { position = ( 0, 23 ), orientation = TopBottom }
   , { position = ( 0, 22 ), orientation = TopBottom }
   , { position = ( 0, 21 ), orientation = TopBottom }
