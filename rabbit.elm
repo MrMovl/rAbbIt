@@ -13,12 +13,12 @@ import RabbitModel exposing (..)
 
 
 main =
-  Signal.map view model
+  Signal.map view game
 
 
-model : Signal Model
-model =
-  Signal.foldp update initialModel (Signal.map3 (,,) (Signal.sampleOn (Time.fps fps) Mouse.position) Mouse.isDown Keyboard.space)
+game : Signal Model
+game =
+  (Signal.map3 (,,) Mouse.position Mouse.isDown Keyboard.space) |> Signal.sampleOn (Time.fps fps) |> Signal.foldp update initialModel 
 
 
 update : Actions -> Model -> Model

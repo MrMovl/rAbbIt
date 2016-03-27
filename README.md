@@ -8,4 +8,4 @@ The current version is actually playable, though it doesn't look like much... An
 
 If you want to try it run:
 elm make rabbitView.elm rabbitModel.elm rabbit.elm --output=rabbit.js
-
+and then open the index.html in your browser.
